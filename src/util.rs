@@ -998,3 +998,76 @@ struct ExitStatus {
     pp_err: Option<String>
 }
 
+
+
+// === pcc-lean: canonical (index- and binder-name-invariant) serialization of
+// a declaration's TYPE, for the private prize-claim (commit the statement,
+// hide the proof). Two exports of the same statement => identical bytes.
+impl<'t, 'p: 't> TcCtx<'t, 'p> {
+    pub fn canonical_decl_type_bytes(&self, target: &str) -> Option<Vec<u8>> {
+        let mut ty = None;
+        for (nptr, declar) in self.export_file.declars.iter() {
+            if self.pcc_name_string(*nptr) == target { ty = Some(declar.info().ty); break; }
+        }
+        let ty = ty?;
+        let mut buf = Vec::new();
+        self.pcc_ser_expr(ty, &mut buf);
+        Some(buf)
+    }
+    fn pcc_name_string(&self, n: NamePtr<'t>) -> String {
+        match self.read_name(n) {
+            crate::name::Name::Anon => String::new(),
+            crate::name::Name::Str(pfx, s, _) => {
+                let p = self.pcc_name_string(pfx);
+                let seg = self.read_string(s).to_string();
+                if p.is_empty() { seg } else { format!("{p}.{seg}") }
+            }
+            crate::name::Name::Num(pfx, num, _) => {
+                let p = self.pcc_name_string(pfx);
+                if p.is_empty() { num.to_string() } else { format!("{p}.{num}") }
+            }
+        }
+    }
+    fn pcc_ser_name(&self, n: NamePtr<'t>, buf: &mut Vec<u8>) {
+        match self.read_name(n) {
+            crate::name::Name::Anon => buf.push(0),
+            crate::name::Name::Str(pfx, s, _) => {
+                buf.push(1); self.pcc_ser_name(pfx, buf);
+                let b = self.read_string(s).as_bytes().to_vec();
+                buf.extend_from_slice(&(b.len() as u64).to_le_bytes()); buf.extend_from_slice(&b);
+            }
+            crate::name::Name::Num(pfx, num, _) => {
+                buf.push(2); self.pcc_ser_name(pfx, buf); buf.extend_from_slice(&num.to_le_bytes());
+            }
+        }
+    }
+    fn pcc_ser_level(&self, l: LevelPtr<'t>, buf: &mut Vec<u8>) {
+        match self.read_level(l) {
+            crate::level::Level::Zero => buf.push(0),
+            crate::level::Level::Succ(p, _) => { buf.push(1); self.pcc_ser_level(p, buf); }
+            crate::level::Level::Max(a, b, _) => { buf.push(2); self.pcc_ser_level(a, buf); self.pcc_ser_level(b, buf); }
+            crate::level::Level::IMax(a, b, _) => { buf.push(3); self.pcc_ser_level(a, buf); self.pcc_ser_level(b, buf); }
+            crate::level::Level::Param(name, _) => { buf.push(4); self.pcc_ser_name(name, buf); }
+        }
+    }
+    fn pcc_ser_levels(&self, ls: LevelsPtr<'t>, buf: &mut Vec<u8>) {
+        let v = self.read_levels(ls);
+        buf.extend_from_slice(&(v.len() as u64).to_le_bytes());
+        for l in v.iter().copied() { self.pcc_ser_level(l, buf); }
+    }
+    fn pcc_ser_expr(&self, e: ExprPtr<'t>, buf: &mut Vec<u8>) {
+        match self.read_expr(e) {
+            crate::expr::Expr::Var { dbj_idx, .. } => { buf.push(3); buf.extend_from_slice(&dbj_idx.to_le_bytes()); }
+            crate::expr::Expr::Sort { level, .. } => { buf.push(4); self.pcc_ser_level(level, buf); }
+            crate::expr::Expr::Const { name, levels, .. } => { buf.push(5); self.pcc_ser_name(name, buf); self.pcc_ser_levels(levels, buf); }
+            crate::expr::Expr::App { fun, arg, .. } => { buf.push(6); self.pcc_ser_expr(fun, buf); self.pcc_ser_expr(arg, buf); }
+            crate::expr::Expr::Pi { binder_type, body, .. } => { buf.push(7); self.pcc_ser_expr(binder_type, buf); self.pcc_ser_expr(body, buf); }
+            crate::expr::Expr::Lambda { binder_type, body, .. } => { buf.push(8); self.pcc_ser_expr(binder_type, buf); self.pcc_ser_expr(body, buf); }
+            crate::expr::Expr::Let { binder_type, val, body, .. } => { buf.push(9); self.pcc_ser_expr(binder_type, buf); self.pcc_ser_expr(val, buf); self.pcc_ser_expr(body, buf); }
+            crate::expr::Expr::Proj { ty_name, idx, structure, .. } => { buf.push(10); self.pcc_ser_name(ty_name, buf); buf.extend_from_slice(&(idx as u64).to_le_bytes()); self.pcc_ser_expr(structure, buf); }
+            crate::expr::Expr::NatLit { ptr, .. } => { buf.push(11); if let Some(bn) = self.read_bignum(ptr) { let b = bn.to_bytes_le(); buf.extend_from_slice(&(b.len() as u64).to_le_bytes()); buf.extend_from_slice(&b); } }
+            crate::expr::Expr::StringLit { ptr, .. } => { buf.push(12); let b = self.read_string(ptr).as_bytes().to_vec(); buf.extend_from_slice(&(b.len() as u64).to_le_bytes()); buf.extend_from_slice(&b); }
+            crate::expr::Expr::Local { id, .. } => { buf.push(13); match id { crate::expr::FVarId::DbjLevel(x) => { buf.push(0); buf.extend_from_slice(&x.to_le_bytes()); } crate::expr::FVarId::Unique(x) => { buf.push(1); buf.extend_from_slice(&x.to_le_bytes()); } } }
+        }
+    }
+}

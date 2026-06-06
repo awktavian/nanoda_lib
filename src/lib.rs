@@ -24,27 +24,41 @@ pub mod util;
 pub(crate) const STACK_SIZE: usize = 16_777_216;
 
 
-/// Re-check an in-memory lean4export (ndjson) closure with the independent
-/// kernel, single-threaded and with no file IO — the entrypoint the pcc-lean
-/// SP1 guest calls. PANICS (via the kernel) if any declaration fails to
-/// typecheck, so a valid proof can only be produced for a genuinely accepted
-/// export. Returns the number of declarations checked on success.
-pub fn check_export_bytes(
-    export: &[u8],
-    permitted_axioms: Vec<String>,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    let cfg = serde_json::json!({
+fn pcc_mk_config(permitted: Vec<String>) -> crate::util::Config {
+    serde_json::from_value(serde_json::json!({
         "use_stdin": false,
-        "permitted_axioms": permitted_axioms,
+        "permitted_axioms": permitted,
         "unpermitted_axiom_hard_error": false,
         "num_threads": 1,
         "print_axioms": false,
         "print_success_message": false,
         "unknown_pp_declar_hard_error": false
-    });
-    let config: crate::util::Config = serde_json::from_value(cfg)?;
-    let (export_file, _skipped) =
-        crate::parser::parse_export_file(std::io::Cursor::new(export), config)?;
-    export_file.check_all_declars(); // num_threads=1 => serial; kernel panics on a bad proof
-    Ok(export_file.declars.len())
+    })).expect("pcc-lean: static config must deserialize")
+}
+
+/// Re-check an in-memory lean4export closure with the independent kernel
+/// (single-threaded, no file IO). Kernel PANICS on a bad proof. Returns the
+/// number of declarations checked.
+pub fn check_export_bytes(export: &[u8], permitted_axioms: Vec<String>) -> Result<usize, Box<dyn std::error::Error>> {
+    let (ef, _skipped) = crate::parser::parse_export_file(std::io::Cursor::new(export), pcc_mk_config(permitted_axioms))?;
+    ef.check_all_declars();
+    Ok(ef.declars.len())
+}
+
+/// PRIZE-CLAIM, prover side: full kernel check, then canonical (index- and
+/// binder-name-invariant) serialization of the TARGET theorem's TYPE. The
+/// caller commits a hash of these bytes; the proof stays a private witness.
+pub fn check_and_type_bytes(export: &[u8], target: &str, permitted_axioms: Vec<String>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let (ef, _skipped) = crate::parser::parse_export_file(std::io::Cursor::new(export), pcc_mk_config(permitted_axioms))?;
+    ef.check_all_declars();
+    ef.with_ctx(|ctx| ctx.canonical_decl_type_bytes(target))
+        .ok_or_else(|| Box::<dyn std::error::Error>::from(format!("target `{target}` not found in export")))
+}
+
+/// PRIZE-CLAIM, verifier side: canonical TYPE serialization WITHOUT
+/// type-checking — for the public (possibly sorry'd) statement export.
+pub fn type_bytes_only(export: &[u8], target: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let (ef, _skipped) = crate::parser::parse_export_file(std::io::Cursor::new(export), pcc_mk_config(vec![]))?;
+    ef.with_ctx(|ctx| ctx.canonical_decl_type_bytes(target))
+        .ok_or_else(|| Box::<dyn std::error::Error>::from(format!("target `{target}` not found in export")))
 }
