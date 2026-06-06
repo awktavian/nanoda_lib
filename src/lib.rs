@@ -36,14 +36,6 @@ fn pcc_mk_config(permitted: Vec<String>) -> crate::util::Config {
     })).expect("pcc-lean: static config must deserialize")
 }
 
-/// Re-check an in-memory lean4export closure with the independent kernel
-/// (single-threaded, no file IO). Kernel PANICS on a bad proof. Returns the
-/// number of declarations checked.
-pub fn check_export_bytes(export: &[u8], permitted_axioms: Vec<String>) -> Result<usize, Box<dyn std::error::Error>> {
-    let (ef, _skipped) = crate::parser::parse_export_file(std::io::Cursor::new(export), pcc_mk_config(permitted_axioms))?;
-    ef.check_all_declars();
-    Ok(ef.declars.len())
-}
 
 /// PRIZE-CLAIM, prover side: full kernel check, then canonical (index- and
 /// binder-name-invariant) serialization of the TARGET theorem's TYPE. The
