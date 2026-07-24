@@ -1,4 +1,4 @@
-# nanoda_lib 100/100 Roadmap
+# nanoda_lib Roadmap
 
 ## Phase 1: Scope
 
@@ -19,5 +19,5 @@
 
 ## Exit Criteria
 
-`nanoda_lib` reaches `100/100` only when users can independently check a real
+`nanoda_lib` is release-ready only when users can independently check a real
 Lean export artifact and reproduce the compatibility/performance report.

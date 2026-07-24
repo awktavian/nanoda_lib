@@ -26,8 +26,8 @@ for Lean-adjacent tooling.
 - Supported Lean syntax/export scope must be documented precisely.
 - Performance and compatibility claims need mathlib-scale corpus evidence.
 
-## 100/100 Gate
+## Release gate
 
-Reach `100/100` by publishing a compatibility matrix, corpus benchmark over
+The release bar is publishing a compatibility matrix, corpus benchmark over
 Lean export artifacts, and an embeddable API example that checks a real proof
 artifact end to end.

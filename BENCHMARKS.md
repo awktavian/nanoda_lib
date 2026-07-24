@@ -14,12 +14,12 @@
 Current smoke command:
 
 ```bash
-cd ~/projects/nanoda_lib
+cd nanoda_lib
 cargo test
 cargo run -- --help
 ```
 
-The 100/100 benchmark must add a corpus command that records commit SHA,
+The release benchmark must add a corpus command that records commit SHA,
 Lean/export version, corpus path, declaration count, failure count, and peak
 RSS.
 
