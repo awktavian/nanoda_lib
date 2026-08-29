@@ -4,7 +4,7 @@ use crate::expr::Expr;
 use crate::util::{
     nat_div, nat_mod, nat_sub, nat_gcd, nat_land, nat_lor, 
     nat_xor, nat_shr, nat_shl, ExportFile, ExprPtr, LevelPtr, 
-    LevelsPtr, NamePtr, TcCache, TcCtx, StringPtr
+    LevelsPtr, NamePtr, TcCache, TcCtx, StringPtr, SortedPair
 };
 use std::error::Error;
 use num_traits::pow::Pow;
@@ -97,8 +97,42 @@ impl<'p> ExportFile<'p> {
             }
             Recursor(recursor_data) => {
                 self.with_tc_and_declar(*d.info(), |tc| tc.check_declar_info(d).unwrap());
+                match recursor_data.all_inductives.get(0) {
+                    None => self.with_ctx(|ctx| {
+                        panic!("Recursors must be derived from an associated inductive type, but recursor {:?} had none", ctx.debug_print(recursor_data.info.name))
+                    }),
+                    Some(ind_name) => match self.declars.get(ind_name) {
+                        None => self.with_ctx(|ctx| {
+                            panic!("Recursors must be derived from an associated inductive declaration. Inductive declaration {:?} does not exist", ctx.debug_print(*ind_name))
+                        }),
+                        Some(Inductive {..}) => (),
+                        Some(_) => self.with_ctx(|ctx| {
+                            panic!("Recursors must be derived from an associated inductive type. Declaration {:?} is not an inductive type", ctx.debug_print(*ind_name))
+                        }),
+                    }
+                }
+                let recursor_idx = self.declars.get_index_of(&recursor_data.info.name).unwrap();
                 for ind_name in recursor_data.all_inductives.iter() {
-                    assert!(self.declars.get(ind_name).is_some())
+                    match self.declars.get_index_of(ind_name) {
+                        None => self.with_ctx(|ctx| {
+                            panic!(
+                                "Recursor {:?} references inductive declaration {:?} which does not exist.",
+                                ctx.debug_print(recursor_data.info.name),
+                                ctx.debug_print(*ind_name)
+                            )
+                        }),
+                        Some(ind_idx) => if recursor_idx <= ind_idx {
+                            self.with_ctx(|ctx| {
+                                panic!(
+                                    "Inductive declarations must be exported prior to any derived recursors. ({:?}, {}), ({:?}, {})",
+                                    ctx.debug_print(recursor_data.info.name),
+                                    recursor_idx,
+                                    ctx.debug_print(*ind_name),
+                                    ind_idx
+                                )
+                            })
+                        } 
+                    }
                 }
             }
         }
@@ -964,7 +998,7 @@ impl<'x, 't: 'x, 'p: 't> TypeChecker<'x, 't, 'p> {
             }
         };
         if result {
-            self.tc_cache.eq_cache.union(x, y);
+            self.tc_cache.eq_cache.insert(SortedPair::new(x, y));
         }
         result
     }
@@ -1139,7 +1173,7 @@ impl<'x, 't: 'x, 'p: 't> TypeChecker<'x, 't, 'p> {
         if x == y {
             return Some(true)
         }
-        if self.tc_cache.eq_cache.check_uf_eq(x, y) {
+        if self.tc_cache.eq_cache.contains(&SortedPair::new(x, y)) {
             return Some(true)
         }
         if let Some(r) = self.def_eq_sort(x, y) {
@@ -1152,13 +1186,11 @@ impl<'x, 't: 'x, 'p: 't> TypeChecker<'x, 't, 'p> {
     }
 
     fn failure_cache_contains(&self, x: ExprPtr<'t>, y: ExprPtr<'t>) -> bool {
-        let pr = if x.get_hash() <= y.get_hash() { (x, y) } else { (y, x) };
-        self.tc_cache.failure_cache.contains(&pr)
+        self.tc_cache.failure_cache.contains(&SortedPair::new(x, y))
     }
 
     fn failure_cache_insert(&mut self, x: ExprPtr<'t>, y: ExprPtr<'t>) {
-        let pr = if x.get_hash() <= y.get_hash() { (x, y) } else { (y, x) };
-        self.tc_cache.failure_cache.insert(pr);
+        self.tc_cache.failure_cache.insert(SortedPair::new(x, y));
     }
 
     fn try_eq_const_app(
@@ -1280,7 +1312,7 @@ impl<'x, 't: 'x, 'p: 't> TypeChecker<'x, 't, 'p> {
         let ty = self.infer_then_whnf(e, InferOnly);
         match self.ctx.read_expr(ty) {
             Sort { level, .. } => (self.ctx.is_zero(level), ty),
-            _ => (false, ty),
+_ => (false, ty),
         }
     }
 
