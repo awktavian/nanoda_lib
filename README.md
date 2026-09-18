@@ -12,13 +12,17 @@ The binary takes a single argument, which is a path to a json configuration file
 
 Export files can be created with [lean4export](https://github.com/leanprover/lean4export).
 
+## Supported export format
+
+This checker accepts lean4export files with a `format.version` in `[3.1.0, 3.2.0)` (see `MIN_SEMVER`/`MAX_SEMVER` in `src/parser.rs`); files with a version below the minimum or at/above the maximum are rejected at parse time with an explicit error. A catalogue of unsupported kernel constructs is not yet documented (see ROADMAP Phase 1).
+
 ## Using the library
 
 The library component can be imported and used as a normal rust crate by specifying it as a dependency in a `Cargo.toml` file.
 
 # Configuration file
 
-The execution conditions of `nanoda_bin` are determined by a json configuration file, there is no old school CLI. This was a conscious design choice to accommodate modern development practices (checking in to version control, use with CI and automation) and what we envision to be the most likely use case for external type checkers (running a suite of external checkers). The UI for external checkers is somewhat TBD and is expected to evolve as the community starts to integrate these into what they're doing.
+The execution conditions of `nanoda_bin` are determined by a json configuration file, there is no old school CLI (the only accepted flags are `-h`/`--help`, which print this document). This was a conscious design choice to accommodate modern development practices (checking in to version control, use with CI and automation) and what we envision to be the most likely use case for external type checkers (running a suite of external checkers). The UI for external checkers is somewhat TBD and is expected to evolve as the community starts to integrate these into what they're doing.
 
 Given that lean4export already uses json as its export format, adding a json parser as a dependency doesn't increase the overall complexity of the project.
 
@@ -30,7 +34,7 @@ The `"permitted_axioms"` list is where users specify the axioms an export file i
 
 if `"unpermitted_axiom_hard_error"` is set to `true`, the presence of an axiom in the export file that is not in the `permitted_axioms` list will cause a hard error and abort checking, regardless of whether it's used by any later declarations. If set to `false`, the unpermitted axiom will simply be ignored, meaning it will not be checked, will not be added to the environment, and will cause a hard error only if another exported declaration actually tries to use it. This value is currently set to `true` by default out of an abundance of caution, but this may change; most users will probably want to set this to `false`, since things like the prelude's `sorryAx` are declared so that they may be used by metaprograms, but will not actually be invoked by other declarations in the file and are therefore safe to just skip.
 
-If `"unsafe_permit_all_axioms"` is set to `true`, all axioms will be admitted to the environment (when using this option, you must also explicitly set `"unpermitted_axiom_hard_error": false` to avoid a hard error on startup). This is checked so as to be mutually exclusive with any of the axiom allow list/whitelist features: it cannot be combined with `"unpermitted_axiom_hard_error": true` or with a non-empty `"permitted_axioms"` list, and either combination will result in a hard error. Defaults to `false`.
+If `"unsafe_permit_all_axioms"` is set to `true`, all axioms will be admitted to the environment (when using this option, you must also explicitly set `"unpermitted_axiom_hard_error": false` to avoid a hard error on startup). This is checked so as to be mutually exclusive with any of the axiom allow list/whitelist features: it cannot be combined with `"unpermitted_axiom_hard_error": true` or with a present `"permitted_axioms"` key (even one bound to an empty list, since the check is `Option::is_some`, not emptiness), and either combination will result in a hard error. Defaults to `false`.
 
 `"nat_extension"` and `"string_extension"` enable or disable the Nat and String kernel extensions. While we expect most users to opt into the Nat and String kernel extensions, they are disabled by default.
 
@@ -38,9 +42,11 @@ If `"unsafe_permit_all_axioms"` is set to `true`, all axioms will be admitted to
 
 `"pp_options"` are the options to be used by the pretty printer.
 
-`"pp_to_stdout"` determines whether the pretty printer output is written to stdout. This is not mutually exclusive with `"pp_output_path"`; if both options are set, the pretty printer output will be written to both stdout and the specified path.
+`"pp_to_stdout"` determines whether the pretty printer output is written to stdout. Defaults to `false`.
 
-`"pp_output_path"` can be set if the pretty printer output should be written to a file path. This is not mutually exclusive with `"pp_to_stdout"`; if both options are set, the pretty printer output will be written to both stdout and the specified path.
+`"pp_output_path"` can be set if the pretty printer output should be written to a file path. Note: if both `"pp_output_path"` and `"pp_to_stdout"` are set, the output is written ONLY to the file path — the destination selection in `Config::get_pp_destination` checks the path first and falls through to stdout otherwise (this does not abort; it is a precedence, not an error).
+
+`"unknown_pp_declar_hard_error"` controls what happens when `"pp_declars"` names a declaration that is not in the environment: if `true` (the default), this is a hard error; if `false`, checking continues. `"print_axioms"` (default `true`) prints the axioms actually admitted to the environment when typechecking finishes. `"num_threads"` is the number of threads used for type checking; checking is serial unless it is greater than 1 (default 0, i.e. serial). None of these three appear in the example config below but all are accepted.
 
 `"declar_sep"` is a separator to print between each pretty printed declaration. A default of "\n\n" will end each declaration with a newline, then put a blank line between successive declarations. While this does allow for the injection of arbitrary strings into the pretty printer output, it's rejected if not valid UTF-8, and the configuration file is controlled entirely by the operator of the type checker, so I don't consider this any more of a vector for attack than specifying an incorrect export file path or knowingly whitelisting an unsound axiom.
 
@@ -65,14 +71,14 @@ An example configuration file:
     "pp_output_path": "/Users/user/file.txt",
     "pp_to_stdout": false,
     "pp_options": {
-        "all": null,
+        "all": false,
         "explicit": false,
-        "universes": null,
-        "notation": null,
+        "universes": false,
+        "notation": true,
         "proofs": false,
         "indent": 2,
         "width": 100,
-        "declar_sep": "\n\n",
+        "declar_sep": "\n\n"
     },
     "print_success_message": false
 }

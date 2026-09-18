@@ -1,7 +1,37 @@
-//! Placeholder:
-//! ```ignore
-//! Doc comment example
+//! # Embedding the checker
+//!
+//! The library entry point is [`util::Config`]: build a configuration, turn it
+//! into an [`util::ExportFile`], and check its declarations.
+//!
 //! ```
+//! use std::path::PathBuf;
+//! use nanoda_lib::util::Config;
+//!
+//! let config = Config {
+//!     export_file_path: Some(PathBuf::from("test_resources/Empty/export")),
+//!     use_stdin: false,
+//!     permitted_axioms: Some(Vec::new()),
+//!     unpermitted_axiom_hard_error: true,
+//!     num_threads: 1,
+//!     nat_extension: false,
+//!     string_extension: false,
+//!     pp_declars: None,
+//!     unknown_pp_declar_hard_error: true,
+//!     pp_options: Default::default(),
+//!     pp_output_path: None,
+//!     pp_to_stdout: false,
+//!     print_success_message: false,
+//!     print_axioms: false,
+//!     unsafe_permit_all_axioms: false,
+//! };
+//! let (export, _skipped_axioms) = config.to_export_file().expect("fixture export parses");
+//! export.check_all_declars();
+//! ```
+//!
+//! Export files can also be checked through the higher-level helpers
+//! [`check_and_type_bytes`] (typecheck, then canonicalize a target
+//! declaration's type) and [`type_bytes_only`] (canonicalize without
+//! typechecking).
 #![allow(clippy::too_many_arguments)]
 #![deny(clippy::cast_possible_truncation)]
 
